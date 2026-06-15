@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Real-time Stock Dashboard — ซุยจัง</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0e1a; --bg2: #111827; --bg3: #1f2937;
+    --border: #1f2937; --border2: #374151;
+    --text: #f9fafb; --text2: #9ca3af; --text3: #6b7280;
+    --up: #10b981; --dn: #ef4444; --accent: #3b82f6;
+    --gold: #f59e0b; --purple: #8b5cf6;
+    --font: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; min-height: 100vh; }
+
+  /* Header */
+  .header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .logo-text { font-size: 15px; font-weight: 600; color: var(--text); }
+  .logo-sub { font-size: 11px; color: var(--text3); }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--up); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }
+  .status-text { font-size: 11px; color: var(--text3); }
+  .refresh-btn { background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all .15s; }
+  .refresh-btn:hover { background: var(--accent); color: white; border-color: transparent; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 16px 20px; }
+
+  /* Source tabs */
+  .source-row { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; }
+  .src-label { font-size: 11px; color: var(--text3); margin-right: 4px; }
+  .src-btn { padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid var(--border2); background: transparent; color: var(--text2); transition: all .15s; display: flex; align-items: center; gap: 5px; }
+  .src-btn.on { background: var(--accent); color: white; border-color: transparent; }
+  .src-btn img { width: 14px; height: 14px; border-radius: 2px; }
+
+  /* Ticker input */
+  .ticker-section { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  .ticker-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+  .ticker-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ticker-chip { background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 500; cursor: pointer; color: var(--text2); transition: all .15s; display: flex; align-items: center; gap: 5px; }
+  .ticker-chip.on { background: #1d3a6e; border-color: var(--accent); color: #60a5fa; }
+  .ticker-chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .custom-input { display: flex; gap: 8px; margin-top: 10px; }
+  .custom-input input { flex: 1; background: var(--bg3); border: 1px solid var(--border2); color: var(--text); padding: 7px 12px; border-radius: 6px; font-size: 13px; outline: none; max-width: 200px; }
+  .custom-input input:focus { border-color: var(--accent); }
+  .custom-input button { background: var(--accent); color: white; border: none; padding: 7px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; }
+
+  /* Price cards */
+  .price-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .price-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; cursor: pointer; transition: all .15s; position: relative; overflow: hidden; }
+  .price-card::after { content:''; position:absolute; bottom:0;left:0;right:0; height:2px; }
+  .price-card.up::after { background: var(--up); }
+  .price-card.dn::after { background: var(--dn); }
+  .price-card.on { border-color: var(--accent); }
+  .pc-ticker { font-size: 14px; font-weight: 600; color: var(--text); }
+  .pc-name { font-size: 10px; color: var(--text3); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pc-price { font-size: 20px; font-weight: 500; color: var(--text); }
+  .pc-change { font-size: 12px; margin-top: 2px; }
+  .pc-ytd { font-size: 10px; color: var(--text3); margin-top: 4px; }
+  .pc-loading { font-size: 11px; color: var(--text3); }
+  .pc-error { font-size: 10px; color: var(--dn); }
+
+  /* Main panel */
+  .main-grid { display: grid; grid-template-columns: 1fr 340px; gap: 16px; margin-bottom: 16px; }
+
+  /* TradingView Chart area */
+  .chart-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .chart-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .chart-title { font-size: 14px; font-weight: 600; }
+  .chart-source { font-size: 11px; color: var(--text3); display: flex; align-items: center; gap: 5px; }
+  .tv-badge { background: #1560bd; color: white; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+  .tv-container { width: 100%; height: 420px; }
+  #tv-widget-container { width: 100%; height: 100%; }
+
+  /* Side panel */
+  .side-panel { display: flex; flex-direction: column; gap: 12px; }
+  .side-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .side-title { font-size: 12px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+  .data-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .data-row:last-child { border-bottom: none; }
+  .dr-label { color: var(--text3); }
+  .dr-val { color: var(--text); font-weight: 500; }
+  .dr-up { color: var(--up); }
+  .dr-dn { color: var(--dn); }
+
+  /* S/R levels */
+  .sr-item { display: flex; justify-content: space-between; align-items: center; padding: 5px 8px; border-radius: 5px; margin-bottom: 4px; font-size: 12px; }
+  .sr-r { background: #2d1515; border-left: 2px solid var(--dn); }
+  .sr-c { background: #1a2a4a; border-left: 2px solid var(--accent); }
+  .sr-s { background: #14291f; border-left: 2px solid var(--up); }
+
+  /* Yahoo Finance data section */
+  .yf-section { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 16px; }
+  .yf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .yf-metric { background: var(--bg3); border-radius: 7px; padding: 10px 12px; }
+  .yf-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+  .yf-val { font-size: 16px; font-weight: 600; color: var(--text); }
+  .yf-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+  /* How to guide */
+  .guide { background: linear-gradient(135deg, #1a2a4a, #1a1f35); border: 1px solid #2d3f6b; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .guide-title { font-size: 13px; font-weight: 600; color: #60a5fa; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .guide-steps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .guide-step { background: rgba(255,255,255,.03); border-radius: 7px; padding: 10px 12px; }
+  .gs-num { font-size: 18px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+  .gs-title { font-size: 12px; font-weight: 500; color: var(--text); margin-bottom: 3px; }
+  .gs-desc { font-size: 11px; color: var(--text3); line-height: 1.5; }
+
+  /* Loading spinner */
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Alert banner */
+  .alert { background: #1a2a1f; border: 1px solid #166534; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 12px; color: #4ade80; display: flex; align-items: center; gap: 8px; }
+  .alert-warn { background: #2a1f0a; border-color: #92400e; color: #fbbf24; }
+
+  .note { font-size: 11px; color: var(--text3); padding-top: 12px; border-top: 1px solid var(--border); line-height: 1.6; }
+
+  @media (max-width: 900px) {
+    .main-grid { grid-template-columns: 1fr; }
+    .guide-steps { grid-template-columns: 1fr; }
+    .price-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">📊</div>
+    <div>
+      <div class="logo-text">ซุยจัง Stock Dashboard</div>
+      <div class="logo-sub">TradingView Chart + Yahoo Finance Data</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="status-dot"></div>
+    <div class="status-text" id="lastUpdate">กำลังโหลด...</div>
+    <button class="refresh-btn" onclick="refreshAll()">🔄 รีเฟรช</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- How to use guide -->
+  <div class="guide">
+    <div class="guide-title">🔌 วิธีเชื่อมต่อข้อมูลจริง</div>
+    <div class="guide-steps">
+      <div class="guide-step">
+        <div class="gs-num">01</div>
+        <div class="gs-title">TradingView Chart (ฟรี ทันที)</div>
+        <div class="gs-desc">กราฟ Real-time จาก TradingView ฝังอยู่ในหน้านี้แล้ว — ใช้งานได้เลยโดยไม่ต้อง Login คลิกที่หุ้นด้านล่างเพื่อเปลี่ยนกราฟ</div>
+      </div>
+      <div class="guide-step">
+        <div class="gs-num">02</div>
+        <div class="gs-title">Yahoo Finance API (ฟรี ทันที)</div>
+        <div class="gs-desc">ดึงราคา P/E Market Cap ฯลฯ แบบ Real-time โดยตรงจาก Yahoo Finance — ไม่ต้อง API Key กดรีเฟรชได้ตลอด</div>
+      </div>
+      <div class="guide-step">
+        <div class="gs-num">03</div>
+        <div class="gs-title">เพิ่ม Ticker เอง</div>
+        <div class="gs-desc">พิมพ์ชื่อหุ้นที่ต้องการในช่อง Add Ticker แล้วกด Enter — ระบบจะดึงข้อมูลให้อัตโนมัติ ใส่ได้ไม่จำกัด</div>
+      </div>
+      <div class="guide-step">
+        <div class="gs-num">04</div>
+        <div class="gs-title">ข้อจำกัดที่ต้องรู้</div>
+        <div class="gs-desc">Yahoo Finance อาจมี CORS limit บางครั้ง ถ้าข้อมูลไม่โหลด ให้รีเฟรชหรือใช้ข้อมูลจาก Screenshot แทนได้เลย</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Source selector -->
+  <div class="source-row">
+    <span class="src-label">แหล่งข้อมูล:</span>
+    <button class="src-btn on" id="src-tv" onclick="setSource('tv',this)">
+      <span class="tv-badge">TV</span> TradingView Chart
+    </button>
+    <button class="src-btn" id="src-yf" onclick="setSource('yf',this)">
+      📈 Yahoo Finance Data
+    </button>
+    <button class="src-btn" id="src-both" onclick="setSource('both',this)">
+      ⚡ ทั้งสอง
+    </button>
+  </div>
+
+  <!-- Ticker selector -->
+  <div class="ticker-section">
+    <div class="ticker-label">เลือกหุ้น — Watchlist ของคุณ</div>
+    <div class="ticker-row" id="tickerRow"></div>
+    <div class="custom-input">
+      <input type="text" id="customTicker" placeholder="เพิ่ม Ticker เช่น NVDA, META..." onkeydown="if(event.key==='Enter')addCustomTicker()">
+      <button onclick="addCustomTicker()">+ เพิ่ม</button>
+    </div>
+  </div>
+
+  <!-- Price cards from Yahoo Finance -->
+  <div id="alertBox"></div>
+  <div class="price-grid" id="priceGrid"></div>
+
+  <!-- Main content -->
+  <div class="main-grid">
+    <!-- TradingView Chart -->
+    <div class="chart-panel">
+      <div class="chart-header">
+        <div class="chart-title" id="chartTitle">TSM — Taiwan Semiconductor</div>
+        <div class="chart-source"><span class="tv-badge">TV</span> TradingView Real-time Chart</div>
+      </div>
+      <div class="tv-container" id="tv-widget-container"></div>
+    </div>
+
+    <!-- Side panel -->
+    <div class="side-panel">
+      <!-- Yahoo Finance Fundamentals -->
+      <div class="side-card">
+        <div class="side-title">📊 Yahoo Finance — Fundamentals</div>
+        <div id="yfFundamentals"><div style="color:var(--text3);font-size:12px;">กำลังโหลดข้อมูล...</div></div>
+      </div>
+
+      <!-- Support / Resistance -->
+      <div class="side-card">
+        <div class="side-title">📐 แนวรับ / แนวต้าน</div>
+        <div id="srLevels"></div>
+        <div style="font-size:10px;color:var(--text3);margin-top:8px;">*คำนวณจาก 52W Range + Fibonacci</div>
+      </div>
+
+      <!-- Quick stats -->
+      <div class="side-card">
+        <div class="side-title">⚡ Quick Stats</div>
+        <div id="quickStats"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Yahoo Finance metrics grid -->
+  <div class="yf-section">
+    <div class="side-title">📈 Yahoo Finance — ข้อมูลเชิงลึก (<span id="yfTicker">TSM</span>)</div>
+    <div class="yf-grid" id="yfGrid"></div>
+  </div>
+
+  <div class="note">
+    ⚠️ กราฟมาจาก TradingView Widget (Real-time) | ข้อมูล Fundamental มาจาก Yahoo Finance API | ราคาและข้อมูลอาจ Delay 15 นาที สำหรับตลาด NASDAQ/NYSE | ข้อมูลนี้เพื่อการศึกษาเท่านั้น ไม่ใช่คำแนะนำการลงทุน
+  </div>
+</div>
+
+<!-- TradingView Widget Script -->
+<script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+<script>
+const DEFAULT_TICKERS = [
+  {t:'TSM',n:'Taiwan Semi',g:'foundry'},
+  {t:'ASML',n:'ASML Holding',g:'foundry'},
+  {t:'AVGO',n:'Broadcom',g:'ai'},
+  {t:'AMD',n:'AMD',g:'ai'},
+  {t:'ARM',n:'Arm Holdings',g:'ai'},
+  {t:'MRVL',n:'Marvell',g:'ai'},
+  {t:'INTC',n:'Intel',g:'ai'},
+  {t:'ANET',n:'Arista Networks',g:'net'},
+  {t:'TER',n:'Teradyne',g:'net'},
+  {t:'LITE',n:'Lumentum',g:'optical'},
+  {t:'AXTI',n:'AXT Inc',g:'optical'},
+  {t:'VIAV',n:'Viavi Solutions',g:'optical'},
+  {t:'AAOI',n:'Applied Opto',g:'optical'},
+  {t:'NOK',n:'Nokia ADR',g:'net'},
+  {t:'MU',n:'Micron',g:'memory'},
+  {t:'SNDK',n:'SanDisk',g:'memory'},
+  {t:'STX',n:'Seagate',g:'memory'},
+  {t:'WDC',n:'Western Digital',g:'memory'}
+];
+
+let tickers = [...DEFAULT_TICKERS];
+let currentTicker = 'TSM';
+let tvWidget = null;
+let priceData = {};
+let currentSource = 'both';
+
+// Color per group
+const groupColors = {foundry:'#22c55e',ai:'#3b82f6',net:'#10b981',optical:'#f59e0b',memory:'#8b5cf6'};
+
+function setSource(s, el) {
+  currentSource = s;
+  document.querySelectorAll('.src-btn').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on');
+}
+
+function renderTickerRow() {
+  document.getElementById('tickerRow').innerHTML = tickers.map(t =>
+    `<div class="ticker-chip ${t.t===currentTicker?'on':''}" onclick="selectTicker('${t.t}','${t.n}')">
+      <div class="dot" style="background:${groupColors[t.g]||'#94a3b8'};"></div>
+      ${t.t}
+    </div>`
+  ).join('');
+}
+
+function addCustomTicker() {
+  const val = document.getElementById('customTicker').value.trim().toUpperCase();
+  if(!val) return;
+  if(!tickers.find(t=>t.t===val)) {
+    tickers.push({t:val, n:val, g:'custom'});
+    renderTickerRow();
+    fetchYahooPrice(val);
+  }
+  document.getElementById('customTicker').value = '';
+  selectTicker(val, val);
+}
+
+// TradingView Widget
+function loadTVChart(ticker) {
+  const container = document.getElementById('tv-widget-container');
+  container.innerHTML = '';
+  try {
+    new TradingView.widget({
+      autosize: true,
+      symbol: ticker,
+      interval: 'D',
+      timezone: 'Asia/Bangkok',
+      theme: 'dark',
+      style: '1',
+      locale: 'th_TH',
+      toolbar_bg: '#111827',
+      enable_publishing: false,
+      allow_symbol_change: true,
+      container_id: 'tv-widget-container',
+      hide_side_toolbar: false,
+      studies: ['RSI@tv-basicstudies','MACD@tv-basicstudies','BB@tv-basicstudies'],
+      show_popup_button: true,
+      popup_width: '1000',
+      popup_height: '650',
+      save_image: true
+    });
+  } catch(e) {
+    container.innerHTML = `
+      <div style="height:420px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#6b7280;">
+        <div style="font-size:32px;">📈</div>
+        <div style="font-size:13px;">เปิด TradingView โดยตรง</div>
+        <a href="https://www.tradingview.com/chart/?symbol=${ticker}" target="_blank"
+           style="background:#3b82f6;color:white;padding:8px 16px;border-radius:6px;text-decoration:none;font-size:12px;">
+          เปิด Chart ${ticker} ใน TradingView →
+        </a>
+        <div style="font-size:11px;color:#4b5563;">กด Ctrl+Click เพื่อเปิดใน Tab ใหม่</div>
+      </div>`;
+  }
+}
+
+// Yahoo Finance data via proxy
+async function fetchYahooPrice(ticker) {
+  const card = document.querySelector(`[data-ticker="${ticker}"]`);
+  if(card) card.querySelector('.pc-loading').innerHTML = '<div class="spinner"></div>';
+  
+  try {
+    // Using Yahoo Finance v8 quote endpoint via allorigins proxy
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const res = await fetch(proxyUrl, {signal: AbortSignal.timeout(8000)});
+    const json = await res.json();
+    const data = JSON.parse(json.contents);
+    const meta = data.chart.result[0].meta;
+    
+    const price = meta.regularMarketPrice || meta.previousClose;
+    const prev = meta.previousClose;
+    const change = price - prev;
+    const changePct = (change/prev*100);
+    const w52hi = meta.fiftyTwoWeekHigh;
+    const w52lo = meta.fiftyTwoWeekLow;
+    
+    priceData[ticker] = { price, prev, change, changePct, w52hi, w52lo,
+      currency: meta.currency, name: meta.longName || meta.shortName || ticker };
+    
+    updatePriceCard(ticker);
+    if(ticker === currentTicker) updateSidePanel(ticker);
+    updateLastUpdate();
+    return priceData[ticker];
+  } catch(err) {
+    if(card) card.querySelector('.pc-loading').innerHTML = `<span class="pc-error">โหลดไม่ได้ — รีเฟรช</span>`;
+    return null;
+  }
+}
+
+async function fetchYahooFundamentals(ticker) {
+  try {
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${ticker}?modules=summaryDetail,defaultKeyStatistics,financialData,price`;
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const res = await fetch(proxyUrl, {signal: AbortSignal.timeout(10000)});
+    const json = await res.json();
+    const data = JSON.parse(json.contents);
+    const r = data.quoteSummary.result[0];
+    return {
+      pe: r.summaryDetail?.trailingPE?.fmt || r.summaryDetail?.forwardPE?.fmt || 'N/A',
+      pb: r.defaultKeyStatistics?.priceToBook?.fmt || 'N/A',
+      eps: r.defaultKeyStatistics?.trailingEps?.fmt || 'N/A',
+      roe: r.financialData?.returnOnEquity?.fmt || 'N/A',
+      revenue: r.financialData?.totalRevenue?.fmt || 'N/A',
+      grossMargin: r.financialData?.grossMargins?.fmt || 'N/A',
+      debtToEquity: r.financialData?.debtToEquity?.fmt || 'N/A',
+      freeCashFlow: r.financialData?.freeCashflow?.fmt || 'N/A',
+      currentRatio: r.financialData?.currentRatio?.fmt || 'N/A',
+      revenueGrowth: r.financialData?.revenueGrowth?.fmt || 'N/A',
+      targetMeanPrice: r.financialData?.targetMeanPrice?.fmt || 'N/A',
+      recommendationMean: r.financialData?.recommendationMean?.fmt || 'N/A',
+      recommendation: r.financialData?.recommendationKey || 'N/A',
+      marketCap: r.price?.marketCap?.fmt || 'N/A',
+      beta: r.summaryDetail?.beta?.fmt || 'N/A',
+      dividendYield: r.summaryDetail?.dividendYield?.fmt || 'N/A',
+      forwardPE: r.summaryDetail?.forwardPE?.fmt || 'N/A'
+    };
+  } catch(e) { return null; }
+}
+
+function updatePriceCard(ticker) {
+  const d = priceData[ticker];
+  if(!d) return;
+  const card = document.querySelector(`[data-ticker="${ticker}"]`);
+  if(!card) return;
+  const up = d.change >= 0;
+  card.className = `price-card ${up?'up':'dn'} ${ticker===currentTicker?'on':''}`;
+  card.querySelector('.pc-price').textContent = `$${d.price.toFixed(2)}`;
+  card.querySelector('.pc-change').innerHTML = `<span class="${up?'dr-up':'dr-dn'}">${up?'▲':'▼'} ${Math.abs(d.changePct).toFixed(2)}%</span>`;
+  card.querySelector('.pc-loading').innerHTML = '';
+  if(d.w52lo && d.w52hi) {
+    const pct = Math.round((d.price-d.w52lo)/(d.w52hi-d.w52lo)*100);
+    card.querySelector('.pc-ytd').textContent = `52W: ${pct}% จาก Low`;
+  }
+}
+
+function renderPriceGrid() {
+  document.getElementById('priceGrid').innerHTML = tickers.map(t =>
+    `<div class="price-card" data-ticker="${t.t}" onclick="selectTicker('${t.t}','${t.n}')">
+      <div class="pc-ticker">${t.t}</div>
+      <div class="pc-name">${t.n}</div>
+      <div class="pc-price">—</div>
+      <div class="pc-change">—</div>
+      <div class="pc-ytd">—</div>
+      <div class="pc-loading"><div class="spinner"></div></div>
+    </div>`
+  ).join('');
+}
+
+function calcSR(price, w52lo, w52hi) {
+  if(!w52lo || !w52hi) return null;
+  const range = w52hi - w52lo;
+  return {
+    r3: w52hi,
+    r2: w52hi * 0.97,
+    r1: price + range * 0.1,
+    cur: price,
+    s1: price - range * 0.08,
+    s2: w52lo + range * 0.236,
+    s3: w52lo
+  };
+}
+
+function updateSidePanel(ticker) {
+  const d = priceData[ticker];
+  if(!d) return;
+  
+  const sr = calcSR(d.price, d.w52lo, d.w52hi);
+  if(sr) {
+    document.getElementById('srLevels').innerHTML = [
+      {l:'R3 (52W High)',v:sr.r3,c:'sr-r',vc:'#ef4444'},
+      {l:'R2 (-3% จาก ATH)',v:sr.r2,c:'sr-r',vc:'#f87171'},
+      {l:'R1 (แนวต้านใกล้)',v:sr.r1,c:'sr-r',vc:'#fca5a5'},
+      {l:`▶ ราคา ${ticker}`,v:sr.cur,c:'sr-c',vc:'#60a5fa'},
+      {l:'S1 (แนวรับใกล้)',v:sr.s1,c:'sr-s',vc:'#4ade80'},
+      {l:'S2 (Fib 23.6%)',v:sr.s2,c:'sr-s',vc:'#86efac'},
+      {l:'S3 (52W Low)',v:sr.s3,c:'sr-s',vc:'#a7f3d0'}
+    ].map(x=>`<div class="sr-item ${x.c}">
+      <span style="color:#9ca3af;">${x.l}</span>
+      <span style="color:${x.vc};font-weight:600;">$${x.v.toFixed(2)}</span>
+    </div>`).join('');
+  }
+  
+  const up = d.change >= 0;
+  document.getElementById('quickStats').innerHTML = [
+    {l:'ราคา',v:`$${d.price.toFixed(2)}`,c:''},
+    {l:'เปลี่ยนแปลง',v:`${up?'+':''}${d.change.toFixed(2)} (${up?'+':''}${d.changePct.toFixed(2)}%)`,c:up?'dr-up':'dr-dn'},
+    {l:'52W High',v:`$${(d.w52hi||0).toFixed(2)}`,c:'dr-up'},
+    {l:'52W Low',v:`$${(d.w52lo||0).toFixed(2)}`,c:'dr-dn'},
+    {l:'% จาก 52W Low',v:d.w52lo?`+${(((d.price-d.w52lo)/d.w52lo)*100).toFixed(1)}%`:'—',c:'dr-up'},
+    {l:'% จาก 52W High',v:d.w52hi?`${(((d.price-d.w52hi)/d.w52hi)*100).toFixed(1)}%`:'—',c:'dr-dn'}
+  ].map(x=>`<div class="data-row"><span class="dr-label">${x.l}</span><span class="dr-val ${x.c}">${x.v}</span></div>`).join('');
+}
+
+async function loadFundamentals(ticker) {
+  document.getElementById('yfGrid').innerHTML = `<div style="color:var(--text3);font-size:12px;display:flex;align-items:center;gap:8px;"><div class="spinner"></div>กำลังโหลดจาก Yahoo Finance...</div>`;
+  document.getElementById('yfFundamentals').innerHTML = `<div style="color:var(--text3);font-size:12px;display:flex;align-items:center;gap:8px;"><div class="spinner"></div></div>`;
+  
+  const f = await fetchYahooFundamentals(ticker);
+  if(!f) {
+    document.getElementById('yfGrid').innerHTML = `<div style="color:var(--dn);font-size:12px;">⚠️ ไม่สามารถโหลดได้ — Yahoo Finance อาจ limit request ชั่วคราว กรุณารีเฟรชอีกครั้ง</div>`;
+    document.getElementById('yfFundamentals').innerHTML = `<div style="color:var(--text3);font-size:12px;">โหลดไม่ได้ชั่วคราว</div>`;
+    return;
+  }
+
+  const recColors = {buy:'#4ade80',hold:'#fbbf24',sell:'#f87171'};
+  const rec = f.recommendation?.toLowerCase();
+  const recColor = rec?.includes('buy')?'#4ade80':rec?.includes('sell')?'#f87171':'#fbbf24';
+
+  document.getElementById('yfFundamentals').innerHTML = [
+    {l:'Market Cap',v:f.marketCap},{l:'P/E (Trailing)',v:f.pe},
+    {l:'Forward P/E',v:f.forwardPE},{l:'ROE',v:f.roe},
+    {l:'Target Price',v:f.targetMeanPrice},{l:'Analyst',v:f.recommendation?.toUpperCase()||'N/A'}
+  ].map(x=>`<div class="data-row"><span class="dr-label">${x.l}</span><span class="dr-val">${x.v}</span></div>`).join('');
+
+  document.getElementById('yfGrid').innerHTML = [
+    {l:'Market Cap',v:f.marketCap,s:'มูลค่าตลาดรวม'},
+    {l:'P/E Ratio',v:f.pe,s:'Trailing P/E'},
+    {l:'Forward P/E',v:f.forwardPE,s:'คาดการณ์ล่วงหน้า'},
+    {l:'P/B Ratio',v:f.pb,s:'Price to Book'},
+    {l:'EPS',v:f.eps,s:'กำไรต่อหุ้น'},
+    {l:'ROE',v:f.roe,s:'ผลตอบแทนส่วนทุน'},
+    {l:'Revenue',v:f.revenue,s:'รายได้รวม'},
+    {l:'Gross Margin',v:f.grossMargin,s:'อัตรากำไรขั้นต้น'},
+    {l:'Free Cash Flow',v:f.freeCashFlow,s:'กระแสเงินสดอิสระ'},
+    {l:'D/E Ratio',v:f.debtToEquity,s:'หนี้ต่อส่วนทุน'},
+    {l:'Revenue Growth',v:f.revenueGrowth,s:'อัตราเติบโตรายได้'},
+    {l:'Beta',v:f.beta,s:'ความผันผวน vs ตลาด'},
+    {l:'Dividend Yield',v:f.dividendYield||'N/A',s:'อัตราปันผล'},
+    {l:'Analyst Target',v:f.targetMeanPrice,s:'ราคาเป้าหมายเฉลี่ย'},
+    {l:'Current Ratio',v:f.currentRatio,s:'สภาพคล่องหมุนเวียน'},
+    {l:'Recommendation',v:`<span style="color:${recColor};font-weight:600;">${f.recommendation?.toUpperCase()||'N/A'}</span>`,s:'คำแนะนำนักวิเคราะห์'}
+  ].map(x=>`<div class="yf-metric"><div class="yf-label">${x.l}</div><div class="yf-val">${x.v}</div><div class="yf-sub">${x.s}</div></div>`).join('');
+}
+
+function selectTicker(ticker, name) {
+  currentTicker = ticker;
+  document.getElementById('chartTitle').textContent = `${ticker} — ${name}`;
+  document.getElementById('yfTicker').textContent = ticker;
+  
+  renderTickerRow();
+  document.querySelectorAll('.price-card').forEach(c => {
+    c.classList.toggle('on', c.dataset.ticker === ticker);
+  });
+  
+  loadTVChart(ticker);
+  if(priceData[ticker]) updateSidePanel(ticker);
+  loadFundamentals(ticker);
+}
+
+function updateLastUpdate() {
+  const now = new Date();
+  document.getElementById('lastUpdate').textContent = `อัพเดต ${now.toLocaleTimeString('th-TH')}`;
+}
+
+async function refreshAll() {
+  document.getElementById('alertBox').innerHTML = `<div class="alert">🔄 กำลังรีเฟรชข้อมูลทั้งหมด...</div>`;
+  const promises = tickers.map(t => fetchYahooPrice(t.t));
+  await Promise.allSettled(promises);
+  loadFundamentals(currentTicker);
+  document.getElementById('alertBox').innerHTML = `<div class="alert">✅ อัพเดตข้อมูลเรียบร้อยแล้ว</div>`;
+  setTimeout(()=>{ document.getElementById('alertBox').innerHTML=''; }, 3000);
+}
+
+// Init
+renderTickerRow();
+renderPriceGrid();
+loadTVChart('TSM');
+
+// Load prices with stagger to avoid rate limit
+tickers.forEach((t, i) => {
+  setTimeout(() => fetchYahooPrice(t.t), i * 300);
+});
+loadFundamentals('TSM');
+</script>
+</body>
+</html>
